@@ -21,7 +21,7 @@ export VNET_NAME=azuvnet
 export SUBNET_NAME=azusubnet
 export NSG_NAME=azunsg
 export NETWORK_SETTINGS_RESOURCE_NAME=azusettings
-export DATABASE_ID=YOUR_DATABASE_ID
+export DATABASE_ID=413793
 export API_VERSION=2024-04-02
 
 # These are the default values. You can adjust your address and subnet prefixes.
