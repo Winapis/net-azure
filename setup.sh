@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 # This script creates the following resources in the specified subscription:
 # - Resource group
@@ -27,6 +27,7 @@ export API_VERSION=2024-04-02
 # These are the default values. You can adjust your address and subnet prefixes.
 export ADDRESS_PREFIX=10.0.0.0/16
 export SUBNET_PREFIX=10.0.0.0/24
+export TMPDIR=/data/data/com.termux/files/usr/tmp
 
 # GitHub Actions service principal IDs
 export GITHUB_CPS_NETWORK_SERVICE_ID=85c49807-809d-4249-86e7-192762525474
@@ -42,20 +43,18 @@ create_custom_role() {
     
     echo "Creating custom role definition: $role_name"
     
-    # Update the role definition file with the actual subscription ID
-    sed "s/SUBSCRIPTION_ID_PLACEHOLDER/$subscription_id/g" "$role_file" > "/tmp/role-definition.json"
+    local tmpfile="$TMPDIR/role-definition.json"
+    sed "s/SUBSCRIPTION_ID_PLACEHOLDER/$subscription_id/g" "$role_file" > "$tmpfile"
     
-    # Check if role already exists
     if az role definition list --name "$role_name" --subscription "$subscription_id" --query "[].roleName" -o tsv | grep -q "^$role_name$"; then
         echo "Custom role '$role_name' already exists. Updating..."
-        az role definition update --role-definition "/tmp/role-definition.json"
+        az role definition update --role-definition "$tmpfile"
     else
         echo "Creating new custom role '$role_name'..."
-        az role definition create --role-definition "/tmp/role-definition.json"
+        az role definition create --role-definition "$tmpfile"
     fi
     
-    # Clean up temporary file
-    rm -f "/tmp/role-definition.json"
+    rm -f "$tmpfile"
     
     echo "Custom role '$role_name' created/updated successfully"
 }
@@ -126,38 +125,38 @@ cleanup_rbac_permissions() {
 
 echo
 echo login to Azure
-. az login --output none
+az login --output none
 
 echo
 echo set account context $SUBSCRIPTION_ID
-. az account set --subscription $SUBSCRIPTION_ID
+az account set --subscription $SUBSCRIPTION_ID
 
 echo
 echo Register resource provider GitHub.Network
-. az provider register --namespace GitHub.Network
+az provider register --namespace GitHub.Network
 
 # Setup RBAC permissions for GitHub Actions service
 setup_rbac_permissions
 
 echo
 echo Create resource group $RESOURCE_GROUP_NAME at $AZURE_LOCATION
-. az group create --name $RESOURCE_GROUP_NAME --location $AZURE_LOCATION
+az group create --name $RESOURCE_GROUP_NAME --location $AZURE_LOCATION
 
 echo
 echo Create NSG rules deployed with 'actions-nsg-deployment.bicep' file
-. az deployment group create --resource-group $RESOURCE_GROUP_NAME --template-file ./actions-nsg-deployment.bicep --parameters location=$AZURE_LOCATION nsgName=$NSG_NAME
+az deployment group create --resource-group $RESOURCE_GROUP_NAME --template-file ./actions-nsg-deployment.bicep --parameters location=$AZURE_LOCATION nsgName=$NSG_NAME
 
 echo
 echo Create vnet $VNET_NAME and subnet $SUBNET_NAME
-. az network vnet create --resource-group $RESOURCE_GROUP_NAME --name $VNET_NAME --address-prefix $ADDRESS_PREFIX --subnet-name $SUBNET_NAME --subnet-prefixes $SUBNET_PREFIX
+az network vnet create --resource-group $RESOURCE_GROUP_NAME --name $VNET_NAME --address-prefix $ADDRESS_PREFIX --subnet-name $SUBNET_NAME --subnet-prefixes $SUBNET_PREFIX
 
 echo
 echo Delegate subnet to GitHub.Network/networkSettings and apply NSG rules
-. az network vnet subnet update --resource-group $RESOURCE_GROUP_NAME --name $SUBNET_NAME --vnet-name $VNET_NAME --delegations GitHub.Network/networkSettings --network-security-group $NSG_NAME
+az network vnet subnet update --resource-group $RESOURCE_GROUP_NAME --name $SUBNET_NAME --vnet-name $VNET_NAME --delegations GitHub.Network/networkSettings --network-security-group $NSG_NAME
 
 echo
 echo Create network settings resource $NETWORK_SETTINGS_RESOURCE_NAME
-. az resource create --resource-group $RESOURCE_GROUP_NAME --name $NETWORK_SETTINGS_RESOURCE_NAME --resource-type GitHub.Network/networkSettings --properties "{ \"location\": \"$AZURE_LOCATION\", \"properties\" : { \"subnetId\": \"/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Network/virtualNetworks/$VNET_NAME/subnets/$SUBNET_NAME\", \"businessId\": \"$DATABASE_ID\" }}" --is-full-object --output table --query "{GitHubId:tags.GitHubId, name:name}" --api-version $API_VERSION
+az resource create --resource-group $RESOURCE_GROUP_NAME --name $NETWORK_SETTINGS_RESOURCE_NAME --resource-type GitHub.Network/networkSettings --properties "{ \"location\": \"$AZURE_LOCATION\", \"properties\" : { \"subnetId\": \"/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Network/virtualNetworks/$VNET_NAME/subnets/$SUBNET_NAME\", \"businessId\": \"$DATABASE_ID\" }}" --is-full-object --output table --query "{GitHubId:tags.GitHubId, name:name}" --api-version $API_VERSION
 
 echo
 echo To clean up and delete resources run the following commands:
